@@ -4,6 +4,7 @@ import csv
 import re
 import datetime
 
+
 def getDate(counter_days):
 	"""
 	date_div = (tr.find('div', class_='flleft').text).split(" ")
@@ -16,7 +17,7 @@ def getDate(counter_days):
 	tdelta = datetime.timedelta(days=counter_days)
 	return today + tdelta
 
-def getTime(td):
+def getTime(td, counter_days):
 	time_text = td.find('td').text.split(':')
 	time = datetime.time(int(time_text[0]), int(time_text[1]))
 	date_and_time = datetime.datetime.combine(getDate(counter_days-1), time) 
@@ -41,49 +42,65 @@ def getTemperature(td):
 
 def getWind(td):
 	td_wind = td.text
-	beaufort_direction_speed = td_wind.strip().split('\n')
+	beaufort_direction_speed = td_wind.strip()
+	if beaufort_direction_speed  == "ΑΠΝΟΙΑ":
+		return "AΠΝΟΙΑ", "", 0
+	beaufort_direction_speed = beaufort_direction_speed.split('\n')
 	beaufort_direction = beaufort_direction_speed[0].replace("Μπφ","").split(" ")
 	beaufort = beaufort_direction[0]
 	direction = beaufort_direction[2]
 	speed = beaufort_direction_speed[1].split('Km/h')[0]
 	return beaufort, direction, speed
 
-def getDesciption(td):
+def getDescription(td):
 	return td.text.strip().replace('\n','',1).split('\n')[0]
 
-def perhourRowmargin(tr):
+def getIconURL(td):
+	src = td.find('img', class_= 'CFicon')
+	url = 'https://meteo.gr/' + src['src']
+	return url
+
+def perhourRowmargin(tr, meteo_dict, counter_days):
 	"""
 	print(getTime(tr.find('td', class_= 'innerTableCell fulltime')))
 	print(getTemperature(tr.find('td', class_= 'innerTableCell temperature tempwidth')))
 	print(getWind(tr.find('td', class_= 'innerTableCell anemosfull')))
-	print(getDesciption(tr.find('td', class_= 'innerTableCell PhenomenaSpecialTableCell phenomenafull')))
+	print(getDescription(tr.find('td', class_= 'innerTableCell PhenomenaSpecialTableCell phenomenafull')))
 	"""
-	date_and_time = getTime(tr.find('td', class_= 'innerTableCell fulltime'))
+	date_and_time = getTime(tr.find('td', class_= 'innerTableCell fulltime'), counter_days)
 	temperature, temperature_face, humidity = getTemperature(tr.find('td', class_= 'innerTableCell temperature tempwidth'))
 	beaufort, direction, speed = getWind(tr.find('td', class_= 'innerTableCell anemosfull'))
-	desciption = getDesciption(tr.find('td', class_= 'innerTableCell PhenomenaSpecialTableCell phenomenafull'))
-	meteo_dict[getTime(tr.find('td', class_= 'innerTableCell fulltime'))] = {
+	description = getDescription(tr.find('td', class_= 'innerTableCell PhenomenaSpecialTableCell phenomenafull'))
+	icon = getIconURL(tr.find('td', class_= 'innerTableCell PhenomenaSpecialTableCell phenomenafull'))
+
+	meteo_dict[getTime(tr.find('td', class_= 'innerTableCell fulltime'), counter_days)] = {
 												'temperature' : temperature, 
 												'temperature_face' : temperature_face,
 												'humidity' : humidity,
 												'beaufort' : beaufort,
 												'direction' : direction,
 												'speed' : speed,
-												'desciption' : desciption}
+												'description' : description,
+												'icon': icon}
+def getCityId(source):
+	m = re.findall(r'href="\/cf\.cfm\?city_id=(\d+)">(\w+.*)<\/a>', source)
+	my_dict = {city:ids for ids,city in m}
+	print(my_dict)
 
-source = requests.get('https://meteo.gr/cf.cfm?city_id=37').text
-soup = BeautifulSoup(source, 'lxml')
-#with open ('meteoArgos.html') as source:
-#	soup = BeautifulSoup(source, 'lxml')
+def main():
+	counter_days = 0
+	source = requests.get('https://meteo.gr/cf.cfm?city_id=171').text
+	soup = BeautifulSoup(source, 'lxml')
+	meteo_dict = {}
+	content = soup.find('div', class_='content')
+	table = content.find('table')
+	children = table.findChildren("tr" , recursive=False)
+	for tr in children:
+		if (tr.find('td', class_= 'innerTableCell fulltime')):
+			perhourRowmargin(tr, meteo_dict, counter_days)
+		else:
+			counter_days += 1
+	return meteo_dict
 
-meteo_dict = {}
-content = soup.find('div', class_='content')
-table = content.find('table')
-children = table.findChildren("tr" , recursive=False)
-counter_days = 0
-for tr in children:
-	if (tr.find('td', class_= 'innerTableCell fulltime')):
-		perhourRowmargin(tr)
-	else:
-		counter_days += 1
-print(meteo_dict)
+if __name__ == "__main__":
+	main()
